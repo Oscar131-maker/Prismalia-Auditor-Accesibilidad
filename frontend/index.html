@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCAG Auditor AI</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <h2>WCAG Auditor AI</h2>
+        <button class="btn-new" id="btnNew">
+            <i class="fas fa-plus"></i> Añadir nuevo sitio
+        </button>
+        <div class="history-list" id="historyList">
+            <!-- items go here -->
+        </div>
+        <button class="btn-logs" id="btnToggleLogs">
+            <i class="fas fa-terminal"></i> Ver Logs de Sistema
+        </button>
+    </aside>
+
+    <main class="main-content">
+        <div id="logsPanel" class="logs-panel">
+            <div class="logs-header">
+                <span><i class="fas fa-microchip"></i> System Logs (Real-time)</span>
+                <button id="btnCloseLogs"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="logsContainer" class="logs-container"></div>
+        </div>
+        <div class="container" id="welcomeView">
+            <section class="input-section">
+                <h1>Analizar nuevo sitio</h1>
+                <p>Ingresa la URL del sitio web para realizar una auditoría completa de accesibilidad WCAG 2.2 AA impulsada por IA.</p>
+                <div class="input-group">
+                    <input type="text" id="urlInput" placeholder="https://ejemplo.com" class="inp-url">
+                    <input type="number" id="limitInput" value="5" min="1" max="50" class="inp-limit">
+                    <button class="btn-analyze" id="btnAnalyze">Analizar</button>
+                </div>
+            </section>
+        </div>
+
+        <div class="container report-section" id="reportView">
+            <div class="report-header">
+                <div>
+                    <h1 id="currentName">Análisis...</h1>
+                    <p id="currentUrl" class="text-muted"></p>
+                </div>
+                <div id="currentStatus" class="status-badge status-processing">Procesando...</div>
+            </div>
+
+            <div class="accordion" id="reportAccordion">
+                <!-- Accordions go here -->
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

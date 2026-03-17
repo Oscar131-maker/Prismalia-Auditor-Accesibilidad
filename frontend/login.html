@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - WCAG Auditor MVP</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background: radial-gradient(circle at top right, #1a1a2e, #0f0f1a);
+        }
+        .login-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.8s ease-out;
+        }
+        .login-card h1 {
+            margin-bottom: 0.5rem;
+            font-size: 1.5rem;
+            background: linear-gradient(to right, #60a5fa, #a855f7);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            color: transparent;
+        }
+        .login-card p {
+            color: #94a3b8;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+        .input-group {
+            text-align: left;
+            margin-bottom: 1.5rem;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #ccc;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.75rem;
+            color: white;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .input-group input:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+        }
+        .btn-login {
+            width: 100%;
+            padding: 0.8rem;
+            background: linear-gradient(to right, #2563eb, #7c3aed);
+            border: none;
+            border-radius: 0.75rem;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+        .error-msg {
+            color: #ef4444;
+            font-size: 0.8rem;
+            margin-top: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <i class="fas fa-shield-halved" style="font-size: 3rem; color: #60a5fa; margin-bottom: 1rem;"></i>
+        <h1>Acceso Auditor</h1>
+        <p>Introduce la contraseña para continuar</p>
+        
+        <div class="input-group">
+            <label>Contraseña</label>
+            <input type="password" id="passwordInput" placeholder="••••••••">
+        </div>
+        
+        <button class="btn-login" id="btnLogin">Entrar al Sistema</button>
+        <div id="errorMsg" class="error-msg">Contraseña incorrecta, intenta de nuevo.</div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        document.getElementById('btnLogin').onclick = async () => {
+            const password = document.getElementById('passwordInput').value;
+            const res = await fetch(`${API_BASE}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('auth_token', data.token);
+                window.location.href = 'index.html';
+            } else {
+                document.getElementById('errorMsg').style.display = 'block';
+            }
+        };
+
+        // Enter key support
+        document.getElementById('passwordInput').onkeypress = (e) => {
+            if (e.key === 'Enter') document.getElementById('btnLogin').click();
+        };
+    </script>
+</body>
+</html>
