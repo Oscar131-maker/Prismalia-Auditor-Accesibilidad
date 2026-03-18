@@ -68,6 +68,12 @@ class WCAGAuditor:
             # Phase 2: Audit & Gemini
             logger.info(f"Fase 2: Auditando {len(pages_to_audit)} páginas encontradas.")
             all_summaries = []
+            total_cost = 0.0
+            
+            # Precios Gemini 1.5 Flash / Lite (con base en la imagen proporcionada)
+            PRICE_INPUT_1M = 0.25
+            PRICE_OUTPUT_1M = 1.50
+
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 for i, url in enumerate(pages_to_audit):
@@ -79,7 +85,17 @@ class WCAGAuditor:
                         
                         logger.info(f"Enviando datos a Gemini para {url}...")
                         # Now calling synchronously
-                        gemini_analysis = self.gemini.generate_page_analysis(raw_data)
+                        result = self.gemini.generate_page_analysis(raw_data)
+                        gemini_analysis = result.get("data", {})
+                        usage = result.get("usage", {})
+                        
+                        # Cálculo de costo
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        candidates_tokens = usage.get("candidates_tokens", 0)
+                        cost = (prompt_tokens * PRICE_INPUT_1M / 1_000_000) + (candidates_tokens * PRICE_OUTPUT_1M / 1_000_000)
+                        total_cost += cost
+                        
+                        logger.info(f"Costo consulta URL ({url}): ${cost:.6f} USD (Tokens: {prompt_tokens} in / {candidates_tokens} out)")
                         
                         report = PageReport(
                             analysis_id=self.analysis_id,
@@ -100,7 +116,19 @@ class WCAGAuditor:
 
             # Phase 3: Global Summary
             logger.info("Fase 3: Generando resumen ejecutivo global...")
-            global_summary = self.gemini.generate_global_summary(all_summaries)
+            result_global = self.gemini.generate_global_summary(all_summaries)
+            global_summary = result_global.get("text")
+            usage_global = result_global.get("usage", {})
+            
+            # Costo resumen global
+            prompt_tokens_g = usage_global.get("prompt_tokens", 0)
+            candidates_tokens_g = usage_global.get("candidates_tokens", 0)
+            cost_global = (prompt_tokens_g * PRICE_INPUT_1M / 1_000_000) + (candidates_tokens_g * PRICE_OUTPUT_1M / 1_000_000)
+            total_cost += cost_global
+            
+            logger.info(f"Costo Resumen Global: ${cost_global:.6f} USD (Tokens: {prompt_tokens_g} in / {candidates_tokens_g} out)")
+            logger.info(f"COSTO TOTAL DEL ANÁLISIS: ${total_cost:.6f} USD")
+
             analysis.global_summary = global_summary
             analysis.status = "completed"
             db.commit()

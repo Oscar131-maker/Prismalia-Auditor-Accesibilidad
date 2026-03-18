@@ -44,12 +44,28 @@ class GeminiService:
             config=config
         )
         
+        usage = response.usage_metadata
         try:
-            return json.loads(response.text)
+            data = json.loads(response.text)
+            return {
+                "data": data,
+                "usage": {
+                    "prompt_tokens": usage.prompt_token_count,
+                    "candidates_tokens": usage.candidates_token_count,
+                    "total_tokens": usage.total_token_count
+                }
+            }
         except:
             return {
-                "summary": "Error procesando resumen.",
-                "action_plan": "Error procesando plan de acción."
+                "data": {
+                    "summary": "Error procesando resumen.",
+                    "action_plan": "Error procesando plan de acción."
+                },
+                "usage": {
+                    "prompt_tokens": usage.prompt_token_count,
+                    "candidates_tokens": usage.candidates_token_count,
+                    "total_tokens": usage.total_token_count
+                }
             }
 
     def generate_global_summary(self, all_page_summaries):
@@ -76,4 +92,12 @@ class GeminiService:
             config=config
         )
         
-        return response.text
+        usage = response.usage_metadata
+        return {
+            "text": response.text,
+            "usage": {
+                "prompt_tokens": usage.prompt_token_count,
+                "candidates_tokens": usage.candidates_token_count,
+                "total_tokens": usage.total_token_count
+            }
+        }
