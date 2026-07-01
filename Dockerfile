@@ -3,8 +3,9 @@ FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
 WORKDIR /app
 
-# ── Install Node.js 20 (needed for pa11y + Puppeteer) ──
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+# ── Install Node.js 22 + unzip (needed for pa11y + Puppeteer) ──
+RUN apt-get update && apt-get install -y unzip && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
@@ -16,8 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install chromium
 
 # ── Node dependencies (pa11y + puppeteer) ──
+# Skip Puppeteer browser download — we use Playwright's Chromium
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package.json .
-RUN npm install --production
+RUN npm install --omit=dev
 
 # ── Copy application code ──
 COPY . .
