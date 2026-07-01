@@ -10,3 +10,4 @@ pandas
 openpyxl
 python-slugify
 python-multipart
+structlog

@@ -26,22 +26,33 @@ if __name__ == "__main__":
     from backend.database import engine, Base
     from ensure_db import create_database
     
-    # Ensure DB exists
-    create_database()
-    
-    # Ensure tables are created
-    print("Iniciando esquemas...")
-    try:
-        Base.metadata.create_all(bind=engine)
-    except Exception as e:
-        error_msg = str(e)
-        if "UnicodeDecodeError" in type(e).__name__ or "codec can't decode" in error_msg:
-             error_msg = "Error de conexión/autenticación. Revisa tu .env y que la contraseña sea correcta."
-        print(f"Error fatal al crear tablas: {error_msg}")
-        exit(1)
-    
-    print("Asegurando navegadores de Playwright...")
-    os.system("python -m playwright install chromium")
+    # Only run DB setup in the main process (not in uvicorn reloader workers)
+    if os.environ.get("PA11Y_DB_READY") != "1":
+        # Ensure DB exists
+        create_database()
+        
+        # Create tables if they don't exist (preserves existing data)
+        print("Aplicando esquema de base de datos...")
+        try:
+            Base.metadata.create_all(bind=engine)
+
+            # Apply lightweight column migrations for columns added after initial creation
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS global_summary TEXT"))
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS max_pages INTEGER DEFAULT 10"))
+                conn.execute(text("ALTER TABLE page_reports ADD COLUMN IF NOT EXISTS page_title VARCHAR"))
+                conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS wp_fingerprint JSON"))
+                conn.commit()
+
+            os.environ["PA11Y_DB_READY"] = "1"
+            print("Esquema aplicado correctamente.")
+        except Exception as e:
+            error_msg = str(e)
+            if "UnicodeDecodeError" in type(e).__name__ or "codec can't decode" in error_msg:
+                error_msg = "Error de conexión/autenticación. Revisa tu .env y que la contraseña sea correcta."
+            print(f"Error fatal al crear tablas: {error_msg}")
+            exit(1)
     
     print("Iniciando servidor en http://localhost:8000")
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

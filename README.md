@@ -1,26 +1,138 @@
-# WCAG Auditor Fullstack MVP
+# Prismalia Auditor — Accesibilidad Web
 
-Aplicación profesional para auditoría de accesibilidad web basada en las pautas WCAG 2.2 AA. Utiliza FastAPI, PostgreSQL, Playwright y la IA de Google Gemini para generar resúmenes ejecutivos y planes de acción automáticos.
+Aplicación profesional para auditoría de accesibilidad web basada en WCAG 2.2 AA.
 
-## 🚀 Despliegue en Railway
+**Stack:** FastAPI · PostgreSQL · Playwright · Pa11y · Puppeteer · Google Gemini AI
 
-1. **Crear Proyecto:** En Railway, crea un nuevo proyecto desde tu repositorio de GitHub.
-2. **Base de Datos:** Añade un servicio de **PostgreSQL** a tu proyecto. Railway inyectará automáticamente la variable `DATABASE_URL`.
-3. **Variables de Entorno:** Configura las siguientes variables en la pestaña "Variables" del servicio de la app:
-   - `GEMINI_API_KEY`: Tu clave de API de Google Gemini.
-   - `AUTH_PASSWORD`: La contraseña para acceder al sistema (ej. `admin123`).
-   - `PORT`: `8080` (Railway lo suele detectar, pero es mejor fijarlo).
-4. **Navegadores:** El `Dockerfile` ya incluye la instalación de Chromium y las dependencias necesarias. No necesitas configurar nada adicional para Playwright.
+## Características
 
-## 🛠️ Instalación Local
+- Auditoría automática con Pa11y (WCAG 2.2 AA)
+- Verificaciones DOM avanzadas con Playwright (50+ checks propios)
+- Detección de WordPress (tema, plugins, versiones)
+- Consejos de corrección con IA (Google Gemini)
+- Interfaz SPA moderna con panel de criterios WCAG
+- Marcar issues como superados con actualización de contadores
+- Logs en tiempo real del pipeline de auditoría
+- Análisis de sitemap completo o limitado por número de páginas
 
-Si quieres ejecutarlo en tu máquina:
+---
 
-1. Clonar el repo.
-2. Instalar dependencias: `pip install -r requirements.txt`
-3. Instalar Playwright: `playwright install chromium`
-4. Configurar `.env` basado en `.env.example`.
-5. Ejecutar: `python run.py`
+## Despliegue en Railway
 
-## 🔒 Seguridad
-La aplicación está protegida por un sistema de acceso básico mediante contraseña definido en la variable `AUTH_PASSWORD`.
+### 1. Subir a GitHub
+
+```bash
+cd accessibility_auditor
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/TU_USUARIO/prismalia-auditor.git
+git push -u origin main
+```
+
+### 2. Crear proyecto en Railway
+
+1. Ve a [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
+2. Selecciona tu repositorio `prismalia-auditor`
+3. Railway detectará el `Dockerfile` y `railway.json` automáticamente
+
+### 3. Añadir PostgreSQL
+
+1. En tu proyecto Railway → **+ New** → **Database** → **PostgreSQL**
+2. Railway inyecta automáticamente `DATABASE_URL` en tu servicio
+
+### 4. Variables de entorno
+
+En la pestaña **Variables** del servicio de la app, añade:
+
+| Variable | Valor | Requerida |
+|----------|-------|-----------|
+| `DATABASE_URL` | (auto-inyectada por Railway PostgreSQL) | ✅ |
+| `GEMINI_API_KEY` | Tu API key de Google Gemini | ✅ |
+| `AUTH_PASSWORD` | Contraseña de acceso al sistema | ✅ |
+| `PORT` | `8080` (Railway lo detecta auto) | Opcional |
+
+### 5. Deploy
+
+Railway hará build automático del Dockerfile. El primer deploy toma ~5 min por la imagen de Playwright + Node.js.
+
+Una vez deployado, accede a la URL pública que Railway asigna.
+
+---
+
+## Instalación Local
+
+```bash
+# 1. Clonar
+git clone https://github.com/TU_USUARIO/prismalia-auditor.git
+cd prismalia-auditor
+
+# 2. Python (3.11+)
+pip install -r requirements.txt
+playwright install chromium
+
+# 3. Node.js (para pa11y)
+npm install
+
+# 4. PostgreSQL local
+# Asegúrate de tener PostgreSQL corriendo
+
+# 5. Configurar entorno
+cp .env.example .env
+# Edita .env con tus credenciales
+
+# 6. Ejecutar
+python run.py
+```
+
+La app estará disponible en `http://localhost:8000`
+
+---
+
+## Estructura del proyecto
+
+```
+├── backend/
+│   ├── main.py            # FastAPI app + endpoints
+│   ├── models.py          # SQLAlchemy models
+│   ├── database.py        # DB connection
+│   ├── criteria.py        # WCAG criteria mapping
+│   ├── logger.py          # Structured logging
+│   ├── services/
+│   │   ├── dom_checker.py # 50+ Playwright DOM checks
+│   │   ├── fix_advisor.py # Gemini LLM integration
+│   │   └── wp_fingerprint.py # WordPress detection
+│   └── prompts/
+│       └── como_solucionar.txt  # LLM prompt template
+├── frontend/
+│   ├── index.html         # Main SPA
+│   ├── login.html         # Auth page
+│   ├── logs.html          # Pipeline logs viewer
+│   ├── script.js          # Frontend logic
+│   └── style.css          # Styles
+├── pa11y_runner.js        # Pa11y + Puppeteer enrichment
+├── start.py               # Production entrypoint (migrations + uvicorn)
+├── run.py                 # Dev entrypoint (with reload)
+├── ensure_db.py           # DB creation helper
+├── Dockerfile             # Production container
+├── railway.json           # Railway deployment config
+├── requirements.txt       # Python deps
+└── package.json           # Node deps (pa11y)
+```
+
+---
+
+## Seguridad
+
+- Acceso protegido por contraseña (`AUTH_PASSWORD`)
+- Token Bearer en todas las peticiones API
+- No se almacenan credenciales en código
+
+---
+
+## Notas para Railway
+
+- La imagen usa ~2.5 GB (Playwright + Chromium + Node). Plan Hobby es suficiente.
+- Single worker (`workers=1`) porque Playwright/Puppeteer no son thread-safe.
+- Las auditorías de sitios grandes (+50 páginas) pueden tardar varios minutos.
+- Si necesitas más RAM, ajusta el plan en Railway settings.

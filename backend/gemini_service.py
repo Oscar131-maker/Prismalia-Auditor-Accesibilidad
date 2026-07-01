@@ -9,7 +9,7 @@ class GeminiService:
         if not api_key:
             print("WARNING: GEMINI_API_KEY no encontrada en el entorno.")
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-3.1-flash-lite-preview"
+        self.model = "gemini-2.0-flash"
 
     def generate_page_analysis(self, raw_data):
         prompt = f"""
@@ -33,7 +33,6 @@ class GeminiService:
         
         config = types.GenerateContentConfig(
             temperature=0.3,
-            thinking_config=types.ThinkingConfig(thinking_level="MEDIUM"),
             response_mime_type="application/json"
         )
         
@@ -82,8 +81,7 @@ class GeminiService:
         """
         
         config = types.GenerateContentConfig(
-            temperature=0.3,
-            thinking_config=types.ThinkingConfig(thinking_level="MEDIUM")
+            temperature=0.3
         )
         
         response = self.client.models.generate_content(

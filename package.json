@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "pa11y": "^5.3.1",
+    "puppeteer": "^25.2.1"
+  }
+}

@@ -4,6 +4,11 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+*.egg-info/
+
+# Node
+node_modules/
+package-lock.json
 
 # Database / Local Files
 .env
@@ -11,6 +16,21 @@ venv/
 *.xlsx
 urls_crawled.xlsx
 
+# Logs & audits
+audits/
+logs/
+
 # OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Misc
+skills-lock.json
+.agents/
+.windsurf/
+.devin/

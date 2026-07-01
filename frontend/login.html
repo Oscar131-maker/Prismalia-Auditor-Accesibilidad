@@ -3,130 +3,190 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - WCAG Auditor MVP</title>
+    <title>Acceso — Prismalia Auditor — Accesibilidad Web</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            background: radial-gradient(circle at top right, #1a1a2e, #0f0f1a);
+            background: var(--bg);
         }
-        .login-card {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 2.5rem;
-            border-radius: 1.5rem;
+
+        .login-wrap {
             width: 100%;
-            max-width: 400px;
-            text-align: center;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            animation: fadeIn 0.8s ease-out;
+            max-width: 380px;
+            padding: 24px;
+            animation: fadeUp 0.35s ease-out both;
         }
-        .login-card h1 {
-            margin-bottom: 0.5rem;
-            font-size: 1.5rem;
-            background: linear-gradient(to right, #60a5fa, #a855f7);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            color: transparent;
+
+        .login-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 36px;
         }
-        .login-card p {
-            color: #94a3b8;
-            margin-bottom: 2rem;
-            font-size: 0.9rem;
+
+        .login-brand-icon {
+            width: 38px;
+            height: 38px;
+            background: var(--cyan-dim);
+            border: 1px solid var(--cyan-glow);
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--cyan);
         }
-        .input-group {
-            text-align: left;
-            margin-bottom: 1.5rem;
+
+        .login-brand-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            font-family: var(--mono);
         }
-        .input-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #ccc;
-            font-size: 0.8rem;
-            font-weight: 500;
+
+        .login-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: var(--text);
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
         }
-        .input-group input {
+
+        .login-sub {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 28px;
+            line-height: 1.5;
+        }
+
+        .login-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .login-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .login-field input[type="password"] {
+            background: var(--surface);
+            border: 1px solid var(--border-med);
+            color: var(--text);
+            padding: 11px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: var(--mono);
+            transition: border-color 0.15s, box-shadow 0.15s;
             width: 100%;
-            padding: 0.8rem 1rem;
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 0.75rem;
-            color: white;
+        }
+
+        .login-field input[type="password"]:focus {
             outline: none;
-            transition: all 0.3s;
+            border-color: var(--cyan);
+            box-shadow: 0 0 0 2px var(--cyan-dim);
         }
-        .input-group input:focus {
-            border-color: #60a5fa;
-            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
-        }
+
         .btn-login {
             width: 100%;
-            padding: 0.8rem;
-            background: linear-gradient(to right, #2563eb, #7c3aed);
+            background: var(--cyan);
+            color: #000;
             border: none;
-            border-radius: 0.75rem;
-            color: white;
-            font-weight: 600;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
             cursor: pointer;
-            transition: transform 0.2s, opacity 0.2s;
+            margin-top: 8px;
+            transition: opacity 0.15s, transform 0.1s;
         }
-        .btn-login:hover {
-            transform: translateY(-2px);
-            opacity: 0.9;
-        }
-        .error-msg {
-            color: #ef4444;
-            font-size: 0.8rem;
-            margin-top: 1rem;
+
+        .btn-login:hover { opacity: 0.88; }
+        .btn-login:active { transform: scale(0.98); }
+
+        .login-error {
+            margin-top: 12px;
+            font-size: 12px;
+            font-family: var(--mono);
+            color: var(--red);
+            background: var(--red-dim);
+            border: 1px solid rgba(255,77,79,0.25);
+            border-radius: 6px;
+            padding: 9px 12px;
             display: none;
+        }
+
+        .login-divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 28px 0 0;
         }
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <i class="fas fa-shield-halved" style="font-size: 3rem; color: #60a5fa; margin-bottom: 1rem;"></i>
-        <h1>Acceso Auditor</h1>
-        <p>Introduce la contraseña para continuar</p>
-        
-        <div class="input-group">
-            <label>Contraseña</label>
-            <input type="password" id="passwordInput" placeholder="••••••••">
+    <div class="login-wrap">
+        <div class="login-brand">
+            <div class="login-brand-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            </div>
+            <span class="login-brand-name">Pa11y Auditor</span>
         </div>
-        
-        <button class="btn-login" id="btnLogin">Entrar al Sistema</button>
-        <div id="errorMsg" class="error-msg">Contraseña incorrecta, intenta de nuevo.</div>
+
+        <h1 class="login-title">Acceso al sistema</h1>
+        <p class="login-sub">Introduce tu contraseña para continuar.</p>
+
+        <div class="login-field">
+            <label class="login-label" for="passwordInput">Contraseña</label>
+            <input type="password" id="passwordInput" placeholder="••••••••" autofocus>
+        </div>
+
+        <button class="btn-login" id="btnLogin">Entrar</button>
+        <div id="errorMsg" class="login-error">Contraseña incorrecta.</div>
+
+        <hr class="login-divider">
     </div>
 
     <script>
         const API_BASE = window.location.origin;
 
-        document.getElementById('btnLogin').onclick = async () => {
+        async function doLogin() {
             const password = document.getElementById('passwordInput').value;
-            const res = await fetch(`${API_BASE}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password })
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                localStorage.setItem('auth_token', data.token);
-                window.location.href = 'index.html';
-            } else {
-                document.getElementById('errorMsg').style.display = 'block';
+            const errorEl = document.getElementById('errorMsg');
+            errorEl.style.display = 'none';
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('auth_token', data.token);
+                    window.location.href = 'index.html';
+                } else {
+                    errorEl.style.display = 'block';
+                }
+            } catch {
+                errorEl.textContent = 'Error de conexión con el servidor.';
+                errorEl.style.display = 'block';
             }
-        };
+        }
 
-        // Enter key support
-        document.getElementById('passwordInput').onkeypress = (e) => {
-            if (e.key === 'Enter') document.getElementById('btnLogin').click();
-        };
+        document.getElementById('btnLogin').onclick = doLogin;
+        document.getElementById('passwordInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') doLogin();
+        });
     </script>
 </body>
 </html>

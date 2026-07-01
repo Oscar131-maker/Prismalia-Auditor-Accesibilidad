@@ -1,27 +1,35 @@
-# Usar la imagen oficial de Playwright con Python
+# Playwright base image includes Python 3.12 + Chromium deps
 FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
 
-# Directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de requisitos primero para aprovechar la caché de Docker
-COPY requirements.txt .
+# ── Install Node.js 20 (needed for pa11y + Puppeteer) ──
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
-# Instalar dependencias de Python
+# ── Python dependencies ──
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Instalar los navegadores de Playwright (Chromium es el que usamos)
+# ── Install Playwright Chromium ──
 RUN playwright install chromium
 
-# Copiar el resto del código
+# ── Node dependencies (pa11y + puppeteer) ──
+COPY package.json .
+RUN npm install --production
+
+# ── Copy application code ──
 COPY . .
 
-# Exponer el puerto que usará Railway (por defecto 8080 o el que definas)
-EXPOSE 8080
+# ── Create audits/logs dirs ──
+RUN mkdir -p audits logs
 
-# Variables de entorno para producción (Railway sobreescribirá estas)
+# ── Port (Railway overrides with $PORT env var) ──
+EXPOSE 8080
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
+ENV NODE_ENV=production
 
-# Comando para arrancar la aplicación usando uvicorn directamente
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# ── Start: run migrations then uvicorn ──
+CMD ["python", "start.py"]

@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs — Prismalia Auditor Accesibilidad Web</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:        #0d0d0f;
+            --surface:   #141416;
+            --surface2:  #1a1a1e;
+            --border:    #242428;
+            --text:      #e2e2e6;
+            --muted:     #636370;
+            --accent:    #7c6ff7;
+
+            --info:      #38bdf8;
+            --info-bg:   #0c1a24;
+            --warn:      #fbbf24;
+            --warn-bg:   #1e1500;
+            --error:     #f87171;
+            --error-bg:  #1e0a0a;
+            --debug:     #a3a3b0;
+            --debug-bg:  #141416;
+            --ok:        #34d399;
+            --ok-bg:     #051a10;
+
+            --phase-init:     #818cf8;
+            --phase-sitemap:  #c084fc;
+            --phase-pa11y:    #38bdf8;
+            --phase-dom:      #34d399;
+            --phase-db:       #fbbf24;
+            --phase-done:     #34d399;
+            --phase-error:    #f87171;
+        }
+
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* ── Header ─────────────────────────────────────────────────── */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+        .header-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text); text-decoration: none; font-size: 14px; }
+        .header-brand svg { color: var(--accent); }
+        .header-sep { color: var(--border); font-size: 18px; }
+        .header-title { color: var(--muted); font-size: 13px; }
+
+        .header-controls { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+        select, input[type="number"] {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: 12px;
+            font-family: inherit;
+            outline: none;
+        }
+        select:focus, input[type="number"]:focus { border-color: var(--accent); }
+        input[type="number"] { width: 72px; }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text); border-radius: 6px; padding: 5px 12px;
+            font-size: 12px; cursor: pointer; font-family: inherit;
+            transition: background .15s, border-color .15s;
+        }
+        .btn:hover { background: var(--border); border-color: var(--accent); }
+        .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn-live { color: var(--ok); border-color: var(--ok); }
+        .btn-live.active { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+
+        .pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 500;
+        }
+        .pill-count { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+
+        /* ── Main layout ─────────────────────────────────────────────── */
+        .main { display: flex; flex: 1; overflow: hidden; }
+
+        /* ── Sidebar auditorías ──────────────────────────────────────── */
+        .sidebar {
+            width: 220px; flex-shrink: 0;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-label { padding: 10px 14px 6px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+        .audit-list { overflow-y: auto; flex: 1; }
+        .audit-item {
+            padding: 8px 14px; cursor: pointer; border-left: 3px solid transparent;
+            transition: background .1s; display: flex; flex-direction: column; gap: 2px;
+        }
+        .audit-item:hover { background: var(--surface2); }
+        .audit-item.active { border-left-color: var(--accent); background: var(--surface2); }
+        .audit-item-id { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); }
+        .audit-item-url { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+        .audit-item-global { font-size: 12px; color: var(--text); }
+
+        /* ── Log panel ───────────────────────────────────────────────── */
+        .log-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        .log-toolbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        .log-count { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+        .phase-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+        .phase-pill {
+            padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600;
+            border: 1px solid transparent; cursor: pointer; transition: opacity .15s;
+            letter-spacing: .04em; text-transform: uppercase;
+        }
+        .phase-pill:not(.active) { opacity: .45; }
+        .phase-pill.active { opacity: 1; }
+        .phase-pill[data-phase="all"]    { color: var(--text);          border-color: var(--border); background: var(--surface2); }
+        .phase-pill[data-phase="init"]   { color: var(--phase-init);    border-color: var(--phase-init); }
+        .phase-pill[data-phase="sitemap"]{ color: var(--phase-sitemap); border-color: var(--phase-sitemap); }
+        .phase-pill[data-phase="pa11y"]  { color: var(--phase-pa11y);   border-color: var(--phase-pa11y); }
+        .phase-pill[data-phase="dom-checker"]{ color: var(--phase-dom); border-color: var(--phase-dom); }
+        .phase-pill[data-phase="db"]     { color: var(--phase-db);      border-color: var(--phase-db); }
+        .phase-pill[data-phase="done"]   { color: var(--phase-done);    border-color: var(--phase-done); }
+        .phase-pill[data-phase="error"]  { color: var(--phase-error);   border-color: var(--phase-error); }
+
+        .log-stream {
+            flex: 1; overflow-y: auto;
+            padding: 8px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            display: grid;
+            grid-template-columns: 155px 60px 100px 1fr;
+            gap: 0 12px;
+            padding: 3px 16px;
+            border-bottom: 1px solid transparent;
+            transition: background .1s;
+            align-items: baseline;
+        }
+        .log-entry:hover { background: var(--surface2); }
+        .log-entry.level-ERROR, .log-entry.level-CRITICAL { background: var(--error-bg); }
+        .log-entry.level-WARNING { background: var(--warn-bg); }
+
+        .log-ts   { color: var(--muted); font-size: 11px; }
+        .log-level {
+            font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+            text-align: center; padding: 1px 5px; border-radius: 4px;
+        }
+        .log-level.INFO     { color: var(--info);  background: var(--info-bg); }
+        .log-level.WARNING  { color: var(--warn);  background: var(--warn-bg); }
+        .log-level.ERROR    { color: var(--error); background: var(--error-bg); }
+        .log-level.CRITICAL { color: #fff;         background: #7e22ce; }
+        .log-level.DEBUG    { color: var(--debug); background: var(--debug-bg); }
+
+        .log-phase {
+            font-size: 10px; font-weight: 600; letter-spacing: .06em;
+            text-transform: uppercase; color: var(--muted);
+        }
+        .log-phase[data-p="init"]    { color: var(--phase-init); }
+        .log-phase[data-p="sitemap"] { color: var(--phase-sitemap); }
+        .log-phase[data-p="pa11y"]   { color: var(--phase-pa11y); }
+        .log-phase[data-p="dom-checker"]{ color: var(--phase-dom); }
+        .log-phase[data-p="db"]      { color: var(--phase-db); }
+        .log-phase[data-p="done"]    { color: var(--phase-done); }
+        .log-phase[data-p="error"]   { color: var(--phase-error); }
+
+        .log-msg  { color: var(--text); }
+        .log-url  { color: var(--muted); font-size: 11px; }
+        .log-dur  { color: var(--accent); font-size: 10px; margin-left: 6px; }
+        .log-extra{ color: var(--muted); font-size: 10px; margin-left: 6px; }
+        .log-msg-wrap { display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; overflow: hidden; }
+
+        /* expand row */
+        .log-entry.expanded .log-detail { display: block; }
+        .log-detail {
+            display: none;
+            grid-column: 1 / -1;
+            padding: 6px 0 8px 20px;
+            color: var(--muted);
+            font-size: 11px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .empty-state {
+            display: flex; align-items: center; justify-content: center;
+            height: 100%; color: var(--muted); font-family: 'Inter', sans-serif;
+            flex-direction: column; gap: 8px;
+        }
+        .empty-state svg { opacity: .3; }
+
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .live-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--ok); animation: pulse 1.2s infinite;
+        }
+        @keyframes pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+
+        .search-wrap { position: relative; }
+        .search-wrap input {
+            background: var(--surface2); border: 1px solid var(--border);
+            color: var(--text); border-radius: 6px; padding: 5px 10px 5px 28px;
+            font-size: 12px; font-family: 'JetBrains Mono', monospace; width: 200px; outline: none;
+        }
+        .search-wrap input:focus { border-color: var(--accent); }
+        .search-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+    <a href="/" class="header-brand">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        Pa11y Auditor
+    </a>
+    <span class="header-sep">/</span>
+    <span class="header-title">Logs del pipeline</span>
+
+    <div class="header-controls">
+        <div class="search-wrap">
+            <svg class="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="searchInput" placeholder="Buscar en logs…">
+        </div>
+
+        <select id="levelFilter">
+            <option value="">Todos los niveles</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="DEBUG">DEBUG</option>
+        </select>
+
+        <input type="number" id="limitInput" value="300" min="10" max="2000" title="Máx. entradas">
+
+        <button class="btn btn-live" id="btnLive" title="Actualización en tiempo real">
+            <span class="live-dot" id="liveDot" style="display:none"></span>
+            Live
+        </button>
+
+        <button class="btn" id="btnRefresh" title="Actualizar">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Actualizar
+        </button>
+
+        <button class="btn" id="btnClear" title="Limpiar vista">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+
+        <button class="btn" id="btnScrollBottom" title="Ir al final">↓</button>
+    </div>
+</header>
+
+<div class="main">
+
+    <!-- Sidebar auditorías -->
+    <aside class="sidebar">
+        <div class="sidebar-label">Auditorías</div>
+        <div class="audit-list" id="auditList">
+            <div class="audit-item active" data-id="global" onclick="selectAudit('global')">
+                <span class="audit-item-global">🌐 Todos los logs</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Panel de logs -->
+    <div class="log-panel">
+        <div class="log-toolbar">
+            <div class="phase-pills" id="phasePills">
+                <span class="phase-pill active" data-phase="all"  onclick="selectPhase('all')">Todas</span>
+                <span class="phase-pill active" data-phase="init"     onclick="selectPhase('init')">Init</span>
+                <span class="phase-pill active" data-phase="sitemap"  onclick="selectPhase('sitemap')">Sitemap</span>
+                <span class="phase-pill active" data-phase="pa11y"    onclick="selectPhase('pa11y')">Pa11y</span>
+                <span class="phase-pill active" data-phase="dom-checker" onclick="selectPhase('dom-checker')">DOM</span>
+                <span class="phase-pill active" data-phase="db"       onclick="selectPhase('db')">DB</span>
+                <span class="phase-pill active" data-phase="done"     onclick="selectPhase('done')">Done</span>
+                <span class="phase-pill active" data-phase="error"    onclick="selectPhase('error')">Error</span>
+            </div>
+            <span class="log-count" id="logCount">— entradas</span>
+        </div>
+
+        <div class="log-stream" id="logStream">
+            <div class="empty-state" id="emptyState">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                <span>No hay logs. Inicia una auditoría o pulsa Actualizar.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = '';
+let currentAuditId = 'global';
+let currentPhase   = 'all';
+let liveInterval   = null;
+let liveEnabled    = false;
+let allLogs        = [];
+let displayedLogs  = [];
+
+// ── Auth token ──────────────────────────────────────────────────────────────
+function getToken() {
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token') || '';
+}
+function headers() {
+    return { 'Authorization': `Bearer ${getToken()}` };
+}
+
+// ── Fetch logs ──────────────────────────────────────────────────────────────
+async function fetchLogs() {
+    const level = document.getElementById('levelFilter').value;
+    const limit = document.getElementById('limitInput').value || 300;
+    let url;
+    if (currentAuditId === 'global') {
+        url = `${API_BASE}/logs?limit=${limit}${level ? '&level='+level : ''}`;
+    } else {
+        url = `${API_BASE}/logs/${currentAuditId}?limit=${limit}${level ? '&level='+level : ''}`;
+    }
+    try {
+        const res = await fetch(url, { headers: headers() });
+        if (!res.ok) return;
+        const data = await res.json();
+        allLogs = data.logs || [];
+        updateAuditList(data.analysis_ids || []);
+        renderLogs();
+    } catch(e) {
+        console.error('Error fetching logs:', e);
+    }
+}
+
+async function fetchAuditIds() {
+    try {
+        const res = await fetch(`${API_BASE}/logs?limit=1`, { headers: headers() });
+        if (!res.ok) return;
+        const data = await res.json();
+        updateAuditList(data.analysis_ids || []);
+    } catch(e) {}
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function renderLogs() {
+    const search    = document.getElementById('searchInput').value.toLowerCase();
+    const stream    = document.getElementById('logStream');
+    const emptyState = document.getElementById('emptyState');
+
+    let logs = allLogs;
+
+    // Filtro de fase
+    if (currentPhase !== 'all') {
+        logs = logs.filter(l => (l.phase || '').toLowerCase() === currentPhase);
+    }
+
+    // Filtro de búsqueda
+    if (search) {
+        logs = logs.filter(l => {
+            const text = [l.event, l.url, l.phase, l.exc, JSON.stringify(l)].join(' ').toLowerCase();
+            return text.includes(search);
+        });
+    }
+
+    displayedLogs = logs;
+    document.getElementById('logCount').textContent = `${logs.length} entradas`;
+
+    if (!logs.length) {
+        emptyState.style.display = 'flex';
+        stream.innerHTML = '';
+        stream.appendChild(emptyState);
+        return;
+    }
+    emptyState.style.display = 'none';
+
+    const frag = document.createDocumentFragment();
+    logs.forEach((entry, idx) => {
+        const row = buildRow(entry, idx);
+        frag.appendChild(row);
+    });
+
+    stream.innerHTML = '';
+    stream.appendChild(frag);
+}
+
+function buildRow(entry, idx) {
+    const row = document.createElement('div');
+    row.className = `log-entry level-${entry.level || 'INFO'}`;
+    row.dataset.idx = idx;
+
+    // Timestamp
+    const ts = (entry.timestamp || '').slice(0, 19).replace('T', ' ');
+
+    // Level badge
+    const level = (entry.level || 'INFO').toUpperCase();
+
+    // Phase
+    const phase = (entry.phase || '').toLowerCase();
+
+    // Message
+    const msg = entry.event || '';
+    const url = entry.url || '';
+    const dur = entry.duration_ms != null ? `${entry.duration_ms}ms` : '';
+
+    // Extra context fields (skip standard ones)
+    const skip = new Set(['timestamp','level','log_level','phase','event','url','duration_ms','analysis_id']);
+    const extra = Object.entries(entry)
+        .filter(([k]) => !skip.has(k))
+        .map(([k, v]) => {
+            if (Array.isArray(v)) return `${k}:[${v.length}]`;
+            if (typeof v === 'object' && v !== null) return `${k}:{…}`;
+            return `${k}:${v}`;
+        }).join('  ');
+
+    row.innerHTML = `
+        <span class="log-ts">${esc(ts)}</span>
+        <span class="log-level ${level}">${level}</span>
+        <span class="log-phase" data-p="${esc(phase)}">${esc(phase)}</span>
+        <div class="log-msg-wrap">
+            <span class="log-msg">${esc(msg)}</span>
+            ${url ? `<span class="log-url">${esc(url.length > 70 ? url.slice(0,70)+'…' : url)}</span>` : ''}
+            ${dur ? `<span class="log-dur">${dur}</span>` : ''}
+            ${extra ? `<span class="log-extra">${esc(extra)}</span>` : ''}
+        </div>
+    `;
+
+    // Click to expand full JSON
+    row.addEventListener('click', () => {
+        const existing = row.querySelector('.log-detail');
+        if (existing) { existing.remove(); row.classList.remove('expanded'); return; }
+        const detail = document.createElement('div');
+        detail.className = 'log-detail';
+        detail.textContent = JSON.stringify(entry, null, 2);
+        row.appendChild(detail);
+        row.classList.add('expanded');
+    });
+
+    return row;
+}
+
+function esc(str) {
+    return String(str || '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Sidebar auditorías ──────────────────────────────────────────────────────
+function updateAuditList(ids) {
+    const list = document.getElementById('auditList');
+    // Mantener el item "global" y añadir los demás
+    const existing = new Set(Array.from(list.querySelectorAll('[data-id]')).map(el => el.dataset.id));
+    ids.forEach(id => {
+        if (!existing.has(String(id))) {
+            const item = document.createElement('div');
+            item.className = 'audit-item';
+            item.dataset.id = id;
+            item.onclick = () => selectAudit(id);
+            item.innerHTML = `
+                <span class="audit-item-id">#${id}</span>
+                <span class="audit-item-url" id="audit-url-${id}">cargando…</span>
+            `;
+            list.appendChild(item);
+            // Intentar cargar el nombre de la auditoría
+            loadAuditName(id);
+        }
+    });
+    // Marcar activo
+    list.querySelectorAll('.audit-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === String(currentAuditId));
+    });
+}
+
+async function loadAuditName(id) {
+    try {
+        const res = await fetch(`${API_BASE}/logs/${id}?limit=1`, { headers: headers() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const firstLog = (data.logs || [])[0];
+        if (firstLog && firstLog.url) {
+            const el = document.getElementById(`audit-url-${id}`);
+            if (el) { try { el.textContent = new URL(firstLog.url).hostname; } catch(e) { el.textContent = firstLog.url.slice(0,30); } }
+        }
+    } catch(e) {}
+}
+
+function selectAudit(id) {
+    currentAuditId = id;
+    fetchLogs();
+    document.querySelectorAll('.audit-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === String(id));
+    });
+}
+
+// ── Filtros de fase ─────────────────────────────────────────────────────────
+function selectPhase(phase) {
+    currentPhase = phase;
+    document.querySelectorAll('.phase-pill').forEach(el => {
+        el.classList.toggle('active',
+            phase === 'all' ? true : el.dataset.phase === phase || el.dataset.phase === 'all'
+        );
+    });
+    renderLogs();
+}
+
+// ── Live mode ───────────────────────────────────────────────────────────────
+function toggleLive() {
+    liveEnabled = !liveEnabled;
+    const btn = document.getElementById('btnLive');
+    const dot = document.getElementById('liveDot');
+    btn.classList.toggle('active', liveEnabled);
+    dot.style.display = liveEnabled ? 'block' : 'none';
+    if (liveEnabled) {
+        liveInterval = setInterval(fetchLogs, 2000);
+    } else {
+        clearInterval(liveInterval);
+        liveInterval = null;
+    }
+}
+
+// ── Events ──────────────────────────────────────────────────────────────────
+document.getElementById('btnRefresh').addEventListener('click', fetchLogs);
+document.getElementById('btnLive').addEventListener('click', toggleLive);
+document.getElementById('btnClear').addEventListener('click', () => {
+    allLogs = [];
+    renderLogs();
+});
+document.getElementById('btnScrollBottom').addEventListener('click', () => {
+    const stream = document.getElementById('logStream');
+    stream.scrollTop = stream.scrollHeight;
+});
+document.getElementById('levelFilter').addEventListener('change', fetchLogs);
+document.getElementById('limitInput').addEventListener('change', fetchLogs);
+document.getElementById('searchInput').addEventListener('input', renderLogs);
+
+// ── Init ────────────────────────────────────────────────────────────────────
+(async function init() {
+    // Verificar autenticación
+    const token = getToken();
+    if (!token) {
+        const pw = prompt('Contraseña:');
+        if (pw) {
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('auth_token', data.token);
+                } else {
+                    alert('Contraseña incorrecta');
+                    return;
+                }
+            } catch(e) { return; }
+        }
+    }
+    await fetchAuditIds();
+    await fetchLogs();
+    // Activar live por defecto
+    toggleLive();
+})();
+</script>
+</body>
+</html>

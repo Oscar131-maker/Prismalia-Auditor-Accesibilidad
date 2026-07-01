@@ -100,9 +100,10 @@ class WCAGAuditor:
                         report = PageReport(
                             analysis_id=self.analysis_id,
                             url=url,
-                            raw_data=raw_data,
-                            summary_left=gemini_analysis.get("summary"),
-                            action_plan_right=gemini_analysis.get("action_plan")
+                            issues=raw_data,
+                            errors_count=0,
+                            warnings_count=0,
+                            notices_count=0,
                         )
                         db.add(report)
                         db.commit()
