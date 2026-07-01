@@ -110,7 +110,12 @@ def fetch_sitemap_urls(base_url: str, limit: int) -> list[str]:
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
-def run_pa11y(urls: list[str]) -> list[dict]:
+PA11Y_BATCH_SIZE = 10
+PA11Y_TIMEOUT_PER_URL = 45
+
+def _run_pa11y_batch(urls: list[str]) -> list[dict]:
+    """Run pa11y on a single batch of URLs."""
+    timeout = max(300, len(urls) * PA11Y_TIMEOUT_PER_URL)
     payload = json.dumps({"urls": urls, "standard": "WCAG2AA", "timeout": 60000})
     result = subprocess.run(
         ["node", PA11Y_RUNNER, payload],
@@ -118,7 +123,7 @@ def run_pa11y(urls: list[str]) -> list[dict]:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=300,
+        timeout=timeout,
         cwd=PROJECT_ROOT,
     )
     stdout = (result.stdout or "").strip()
@@ -129,6 +134,32 @@ def run_pa11y(urls: list[str]) -> list[dict]:
             f"stderr: {stderr_hint}"
         )
     return json.loads(stdout)
+
+
+def run_pa11y(urls: list[str], log=None) -> list[dict]:
+    """Run pa11y in batches to avoid subprocess timeout on large URL sets."""
+    if len(urls) <= PA11Y_BATCH_SIZE:
+        return _run_pa11y_batch(urls)
+
+    all_results = []
+    total_batches = (len(urls) + PA11Y_BATCH_SIZE - 1) // PA11Y_BATCH_SIZE
+    for i in range(0, len(urls), PA11Y_BATCH_SIZE):
+        batch = urls[i : i + PA11Y_BATCH_SIZE]
+        batch_num = i // PA11Y_BATCH_SIZE + 1
+        if log:
+            log.info(
+                f"pa11y batch {batch_num}/{total_batches} ({len(batch)} URLs)",
+                phase="pa11y", batch=batch_num, total_batches=total_batches,
+            )
+        try:
+            results = _run_pa11y_batch(batch)
+            all_results.extend(results)
+        except Exception as e:
+            if log:
+                log.error(f"pa11y batch {batch_num} falló: {e}", phase="pa11y")
+            for url in batch:
+                all_results.append({"url": url, "status": "error", "error": str(e), "issues": []})
+    return all_results
 
 
 def run_dom_checks_for_urls(urls: list[str], analysis_id: int | None = None) -> dict[str, list[dict]]:
@@ -210,7 +241,7 @@ async def audit_task(analysis_id: int, url: str, limit: int):
         log.info("iniciando análisis pa11y", phase="pa11y", total_urls=len(urls))
         t0 = time.monotonic()
         loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(None, run_pa11y, urls)
+        results = await loop.run_in_executor(None, lambda: run_pa11y(urls, log=log))
         pa11y_dur = int((time.monotonic() - t0) * 1000)
         log.info(
             f"pa11y completado: {len(results)} páginas procesadas",
