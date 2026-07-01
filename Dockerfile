@@ -13,20 +13,20 @@ RUN apt-get update && apt-get install -y unzip && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Install Playwright Chromium ──
-RUN playwright install chromium
+# ── Install Playwright browsers (match pip-installed version) ──
+RUN playwright install --with-deps chromium
 
 # ── Node dependencies (pa11y + puppeteer) ──
 # Skip Puppeteer browser download — we use Playwright's Chromium
 ENV PUPPETEER_SKIP_DOWNLOAD=true
-COPY package.json .
+COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
 # ── Copy application code ──
 COPY . .
 
 # ── Create audits/logs dirs ──
-RUN mkdir -p audits logs
+RUN mkdir -p audits logs screenshots
 
 # ── Port (Railway overrides with $PORT env var) ──
 EXPOSE 8080

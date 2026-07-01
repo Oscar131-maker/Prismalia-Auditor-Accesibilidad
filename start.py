@@ -12,7 +12,35 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 
-def wait_for_db(max_retries=10, delay=3):
+def check_database_url():
+    """Verify DATABASE_URL is configured. Fail fast with a clear message if not."""
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        print("=" * 60)
+        print("ERROR FATAL: DATABASE_URL no está configurada.")
+        print("")
+        print("En Railway, debes:")
+        print("  1. Agregar un servicio PostgreSQL al proyecto")
+        print("  2. En Variables del servicio web, agregar:")
+        print("     DATABASE_URL = ${{Postgres.DATABASE_URL}}")
+        print("=" * 60)
+        sys.exit(1)
+
+    # Show sanitized URL for debugging (hide password)
+    safe_url = db_url
+    if "@" in safe_url:
+        prefix = safe_url.split("@")[0]
+        if ":" in prefix:
+            parts = prefix.rsplit(":", 1)
+            safe_url = parts[0] + ":****@" + db_url.split("@", 1)[1]
+    print(f"DATABASE_URL detectada: {safe_url}")
+
+    if "localhost" in db_url or "127.0.0.1" in db_url:
+        print("ADVERTENCIA: DATABASE_URL apunta a localhost. Esto NO funcionará en Railway.")
+        print("Asegúrate de vincular el servicio PostgreSQL correctamente.")
+
+
+def wait_for_db(max_retries=15, delay=5):
     """Wait until the database is reachable."""
     from backend.database import engine
     from sqlalchemy import text
@@ -33,6 +61,7 @@ def wait_for_db(max_retries=10, delay=3):
 def run_migrations():
     """Apply database schema and lightweight migrations."""
     from backend.database import engine, Base
+    from backend import models  # noqa: F401 — ensure models are registered
 
     print("Aplicando esquema de base de datos...")
     try:
@@ -55,15 +84,19 @@ def run_migrations():
 def main():
     port = int(os.environ.get("PORT", 8080))
 
-    # Wait for DB to be ready, then run migrations
+    # 1. Validate DATABASE_URL exists
+    check_database_url()
+
+    # 2. Wait for DB to be ready
     if not wait_for_db():
-        print("ERROR: No se pudo conectar a la base de datos después de varios intentos.")
-        print(f"DATABASE_URL configurada: {'Sí' if os.environ.get('DATABASE_URL') else 'NO — FALTA CONFIGURAR'}")
+        print("ERROR: No se pudo conectar a la base de datos después de 15 intentos.")
+        print("Verifica que el servicio PostgreSQL esté corriendo en Railway.")
         sys.exit(1)
 
+    # 3. Run migrations
     run_migrations()
 
-    # Start uvicorn (no reload in production)
+    # 4. Start uvicorn (no reload in production)
     import uvicorn
     print(f"Iniciando servidor en puerto {port}")
     uvicorn.run(

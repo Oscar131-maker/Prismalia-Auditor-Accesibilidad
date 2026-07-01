@@ -11,6 +11,9 @@ audits/
 logs/
 .vscode/
 .idea/
+.agents/
+.windsurf/
+.devin/
 Thumbs.db
 .DS_Store
 debug_playwright.py
@@ -20,3 +23,4 @@ extract_msgs.js
 wcag_auditor.py
 skills-lock.json
 README.md
+railway.toml
