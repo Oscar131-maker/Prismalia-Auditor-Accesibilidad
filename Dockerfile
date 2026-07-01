@@ -17,10 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN playwright install --with-deps chromium
 
 # ── Node dependencies (pa11y + puppeteer) ──
-# Skip Puppeteer browser download — we use Playwright's Chromium
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
+
+# ── Install Chromium for Puppeteer (used by pa11y) ──
+RUN npx puppeteer browsers install chrome
 
 # ── Copy application code ──
 COPY . .
