@@ -4,6 +4,7 @@ Runs database migrations then starts uvicorn.
 """
 import os
 import sys
+import threading
 import time
 
 # Production doesn't need Windows event loop policy
@@ -58,27 +59,73 @@ def wait_for_db(max_retries=15, delay=5):
     return False
 
 
+def _is_transient_migration_error(exc):
+    code = getattr(getattr(exc, "orig", None), "pgcode", None)
+    return code in {"55P03", "57014"}
+
+
+def _configure_migration_timeouts(conn):
+    from sqlalchemy import text
+
+    conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+    conn.execute(text("SET LOCAL statement_timeout = '30s'"))
+
+
 def run_migrations():
     """Apply database schema and lightweight migrations."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
     from backend.database import engine, Base
     from backend import models  # noqa: F401 — ensure models are registered
 
+    statements = [
+        "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS global_summary TEXT",
+        "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS max_pages INTEGER DEFAULT 10",
+        "ALTER TABLE page_reports ADD COLUMN IF NOT EXISTS page_title VARCHAR",
+        "ALTER TABLE analyses ADD COLUMN IF NOT EXISTS wp_fingerprint JSON",
+    ]
+
     print("Aplicando esquema de base de datos...")
     try:
-        Base.metadata.create_all(bind=engine)
-
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS global_summary TEXT"))
-            conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS max_pages INTEGER DEFAULT 10"))
-            conn.execute(text("ALTER TABLE page_reports ADD COLUMN IF NOT EXISTS page_title VARCHAR"))
-            conn.execute(text("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS wp_fingerprint JSON"))
-            conn.commit()
-
-        print("Esquema aplicado correctamente.")
-    except Exception as e:
-        print(f"Error en migraciones: {e}")
+        with engine.begin() as conn:
+            _configure_migration_timeouts(conn)
+            Base.metadata.create_all(bind=conn)
+    except OperationalError as exc:
+        if _is_transient_migration_error(exc):
+            print("Esquema ocupado por una transacción activa; se difiere la migración para no bloquear el arranque.")
+            return False
+        print(f"Error en migraciones: {exc}")
         raise
+
+    deferred = False
+    for statement in statements:
+        try:
+            with engine.begin() as conn:
+                _configure_migration_timeouts(conn)
+                conn.execute(text(statement))
+        except OperationalError as exc:
+            if _is_transient_migration_error(exc):
+                deferred = True
+                print(f"Migración diferida por bloqueo transitorio: {statement}")
+                continue
+            print(f"Error en migraciones: {exc}")
+            raise
+
+    if deferred:
+        print("Esquema parcialmente diferido; el servidor iniciará y la migración se reintentará en segundo plano.")
+        return False
+
+    print("Esquema aplicado correctamente.")
+    return True
+
+
+def retry_migrations():
+    for attempt in range(1, 13):
+        time.sleep(30)
+        print(f"Reintentando migraciones diferidas ({attempt}/12)...")
+        if run_migrations():
+            return
+    print("Las migraciones diferidas no pudieron completarse; se reintentará en el próximo deploy.")
 
 
 def main():
@@ -94,7 +141,9 @@ def main():
         sys.exit(1)
 
     # 3. Run migrations
-    run_migrations()
+    migrations_completed = run_migrations()
+    if not migrations_completed:
+        threading.Thread(target=retry_migrations, daemon=True).start()
 
     # 4. Start uvicorn (no reload in production)
     import uvicorn

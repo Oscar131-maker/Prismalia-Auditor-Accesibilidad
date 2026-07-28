@@ -41,6 +41,10 @@ async def verify_token(authorization: Optional[str] = Header(None)):
     if authorization != f"Bearer {AUTH_PASSWORD}":
         raise HTTPException(status_code=401, detail="No autorizado")
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/login")
 async def login(data: dict):
     if data.get("password") == AUTH_PASSWORD:
