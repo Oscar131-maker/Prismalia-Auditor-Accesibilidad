@@ -106,39 +106,53 @@ async function enrichIssues(browser, url, issues) {
     return issues;
 }
 
+const browserArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--no-zygote'
+];
+
+async function launchBrowser() {
+    return puppeteer.launch({ headless: true, args: browserArgs });
+}
+
 async function run() {
     const input = JSON.parse(process.argv[2]);
     const urls = input.urls || [];
     const standard = input.standard || 'WCAG2AA';
     const timeout = input.timeout || 30000;
-
     const results = [];
+    let browser;
 
-    // Launch a shared browser for enrichment
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-
-    for (const url of urls) {
-        try {
-            const result = await pa11y(url, {
-                standard,
-                timeout,
-                chromeLaunchConfig: {
-                    args: ['--no-sandbox', '--disable-setuid-sandbox']
-                },
-                log: { debug: () => {}, error: () => {}, info: () => {} }
-            });
-            // Enrich issues with full HTML + parent + resources
-            const enrichedIssues = await enrichIssues(browser, url, result.issues || []);
-            results.push({ url, status: 'ok', issues: enrichedIssues, documentTitle: result.documentTitle || '' });
-        } catch (err) {
-            results.push({ url, status: 'error', error: err.message, issues: [] });
+    try {
+        browser = await launchBrowser();
+        for (const url of urls) {
+            try {
+                if (!browser.connected) {
+                    browser = await launchBrowser();
+                }
+                const result = await pa11y(url, {
+                    standard,
+                    timeout,
+                    browser,
+                    log: { debug: () => {}, error: () => {}, info: () => {} }
+                });
+                const enrichedIssues = await enrichIssues(browser, url, result.issues || []);
+                results.push({ url, status: 'ok', issues: enrichedIssues, documentTitle: result.documentTitle || '' });
+            } catch (err) {
+                results.push({ url, status: 'error', error: err.message, issues: [] });
+            }
+        }
+    } finally {
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (err) {}
         }
     }
 
-    await browser.close();
     process.stdout.write(JSON.stringify(results));
 }
 

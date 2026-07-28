@@ -7,7 +7,9 @@ import os
 import asyncio
 import sys
 import json
+import signal
 import subprocess
+import threading
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -110,60 +112,76 @@ def fetch_sitemap_urls(base_url: str, limit: int) -> list[str]:
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
-PA11Y_BATCH_SIZE = 10
-PA11Y_TIMEOUT_PER_URL = 45
+PA11Y_BATCH_SIZE = max(1, int(os.environ.get("PA11Y_BATCH_SIZE", "3")))
+PA11Y_TIMEOUT_PER_URL = max(30, int(os.environ.get("PA11Y_TIMEOUT_PER_URL", "60")))
+PA11Y_PAGE_TIMEOUT_MS = max(1000, int(os.environ.get("PA11Y_PAGE_TIMEOUT_MS", "30000")))
+BROWSER_WORKLOAD_LOCK = threading.Lock()
 
 def _run_pa11y_batch(urls: list[str]) -> list[dict]:
     """Run pa11y on a single batch of URLs."""
-    timeout = max(300, len(urls) * PA11Y_TIMEOUT_PER_URL)
-    payload = json.dumps({"urls": urls, "standard": "WCAG2AA", "timeout": 60000})
-    result = subprocess.run(
+    timeout = len(urls) * PA11Y_TIMEOUT_PER_URL + 30
+    payload = json.dumps({"urls": urls, "standard": "WCAG2AA", "timeout": PA11Y_PAGE_TIMEOUT_MS})
+    process = subprocess.Popen(
         ["node", PA11Y_RUNNER, payload],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=timeout,
         cwd=PROJECT_ROOT,
+        start_new_session=os.name != "nt",
     )
-    stdout = (result.stdout or "").strip()
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        if os.name != "nt":
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
+        process.communicate()
+        raise RuntimeError(f"pa11y batch agotó el tiempo máximo de {timeout}s; se detuvo el proceso") from exc
+
+    stdout = (stdout or "").strip()
     if not stdout:
-        stderr_hint = (result.stderr or "")[:800]
+        stderr_hint = (stderr or "")[:800]
         raise RuntimeError(
-            f"pa11y no produjo salida (returncode={result.returncode}). "
+            f"pa11y no produjo salida (returncode={process.returncode}). "
             f"stderr: {stderr_hint}"
         )
     return json.loads(stdout)
 
 
 def run_pa11y(urls: list[str], log=None) -> list[dict]:
-    """Run pa11y in batches to avoid subprocess timeout on large URL sets."""
-    if len(urls) <= PA11Y_BATCH_SIZE:
-        return _run_pa11y_batch(urls)
-
-    all_results = []
-    total_batches = (len(urls) + PA11Y_BATCH_SIZE - 1) // PA11Y_BATCH_SIZE
-    for i in range(0, len(urls), PA11Y_BATCH_SIZE):
-        batch = urls[i : i + PA11Y_BATCH_SIZE]
-        batch_num = i // PA11Y_BATCH_SIZE + 1
-        if log:
-            log.info(
-                f"pa11y batch {batch_num}/{total_batches} ({len(batch)} URLs)",
-                phase="pa11y", batch=batch_num, total_batches=total_batches,
-            )
-        try:
-            results = _run_pa11y_batch(batch)
-            all_results.extend(results)
-        except Exception as e:
+    """Run pa11y in bounded batches without overlapping Chromium workloads."""
+    with BROWSER_WORKLOAD_LOCK:
+        all_results = []
+        total_batches = (len(urls) + PA11Y_BATCH_SIZE - 1) // PA11Y_BATCH_SIZE
+        for i in range(0, len(urls), PA11Y_BATCH_SIZE):
+            batch = urls[i : i + PA11Y_BATCH_SIZE]
+            batch_num = i // PA11Y_BATCH_SIZE + 1
             if log:
-                log.error(f"pa11y batch {batch_num} falló: {e}", phase="pa11y")
-            for url in batch:
-                all_results.append({"url": url, "status": "error", "error": str(e), "issues": []})
-    return all_results
+                log.info(
+                    f"pa11y batch {batch_num}/{total_batches} ({len(batch)} URLs)",
+                    phase="pa11y", batch=batch_num, total_batches=total_batches,
+                )
+            try:
+                results = _run_pa11y_batch(batch)
+                all_results.extend(results)
+            except Exception as e:
+                if log:
+                    log.error(f"pa11y batch {batch_num} falló: {e}", phase="pa11y")
+                for url in batch:
+                    all_results.append({"url": url, "status": "error", "error": str(e), "issues": []})
+        return all_results
 
 
 def run_dom_checks_for_urls(urls: list[str], analysis_id: int | None = None) -> dict[str, list[dict]]:
     """Ejecuta los checks DOM con Playwright sync para cada URL. Devuelve {url: [issues]}."""
+    with BROWSER_WORKLOAD_LOCK:
+        return _run_dom_checks_for_urls_unlocked(urls, analysis_id)
+
+
+def _run_dom_checks_for_urls_unlocked(urls: list[str], analysis_id: int | None = None) -> dict[str, list[dict]]:
     import time
     from playwright.sync_api import sync_playwright
     log = get_audit_logger(analysis_id) if analysis_id else get_audit_logger("global")
