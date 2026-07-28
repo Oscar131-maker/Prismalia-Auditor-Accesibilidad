@@ -10,6 +10,7 @@ import json
 import signal
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -115,119 +116,169 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 PA11Y_BATCH_SIZE = max(1, int(os.environ.get("PA11Y_BATCH_SIZE", "3")))
 PA11Y_TIMEOUT_PER_URL = max(30, int(os.environ.get("PA11Y_TIMEOUT_PER_URL", "60")))
 PA11Y_PAGE_TIMEOUT_MS = max(1000, int(os.environ.get("PA11Y_PAGE_TIMEOUT_MS", "30000")))
-BROWSER_WORKLOAD_LOCK = threading.Lock()
+BROWSER_WORKERS = max(1, int(os.environ.get("BROWSER_WORKERS", "4")))
+PA11Y_WORKERS = min(BROWSER_WORKERS, max(1, int(os.environ.get("PA11Y_WORKERS", str(BROWSER_WORKERS)))))
+DOM_CHECKER_WORKERS = min(BROWSER_WORKERS, max(1, int(os.environ.get("DOM_CHECKER_WORKERS", str(BROWSER_WORKERS)))))
+BROWSER_WORKLOAD_SEMAPHORE = threading.BoundedSemaphore(BROWSER_WORKERS)
+
 
 def _run_pa11y_batch(urls: list[str]) -> list[dict]:
-    """Run pa11y on a single batch of URLs."""
-    timeout = len(urls) * PA11Y_TIMEOUT_PER_URL + 30
-    payload = json.dumps({"urls": urls, "standard": "WCAG2AA", "timeout": PA11Y_PAGE_TIMEOUT_MS})
-    process = subprocess.Popen(
-        ["node", PA11Y_RUNNER, payload],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        cwd=PROJECT_ROOT,
-        start_new_session=os.name != "nt",
-    )
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        if os.name != "nt":
-            os.killpg(process.pid, signal.SIGKILL)
-        else:
-            process.kill()
-        process.communicate()
-        raise RuntimeError(f"pa11y batch agotó el tiempo máximo de {timeout}s; se detuvo el proceso") from exc
-
-    stdout = (stdout or "").strip()
-    if not stdout:
-        stderr_hint = (stderr or "")[:800]
-        raise RuntimeError(
-            f"pa11y no produjo salida (returncode={process.returncode}). "
-            f"stderr: {stderr_hint}"
+    with BROWSER_WORKLOAD_SEMAPHORE:
+        timeout = len(urls) * PA11Y_TIMEOUT_PER_URL + 30
+        payload = json.dumps({"urls": urls, "standard": "WCAG2AA", "timeout": PA11Y_PAGE_TIMEOUT_MS})
+        process = subprocess.Popen(
+            ["node", PA11Y_RUNNER, payload],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=PROJECT_ROOT,
+            start_new_session=os.name != "nt",
         )
-    return json.loads(stdout)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            if os.name != "nt":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+            process.communicate()
+            raise RuntimeError(f"pa11y batch agotó el tiempo máximo de {timeout}s; se detuvo el proceso") from exc
+
+        stdout = (stdout or "").strip()
+        if not stdout:
+            stderr_hint = (stderr or "")[:800]
+            raise RuntimeError(
+                f"pa11y no produjo salida (returncode={process.returncode}). "
+                f"stderr: {stderr_hint}"
+            )
+        return json.loads(stdout)
+
+
+def _run_pa11y_batch_with_logging(batch: list[str], batch_num: int, total_batches: int, log) -> list[dict]:
+    if log:
+        log.info(
+            f"pa11y batch {batch_num}/{total_batches} ({len(batch)} URLs)",
+            phase="pa11y", batch=batch_num, total_batches=total_batches,
+        )
+    return _run_pa11y_batch(batch)
 
 
 def run_pa11y(urls: list[str], log=None) -> list[dict]:
-    """Run pa11y in bounded batches without overlapping Chromium workloads."""
-    with BROWSER_WORKLOAD_LOCK:
-        all_results = []
-        total_batches = (len(urls) + PA11Y_BATCH_SIZE - 1) // PA11Y_BATCH_SIZE
-        for i in range(0, len(urls), PA11Y_BATCH_SIZE):
-            batch = urls[i : i + PA11Y_BATCH_SIZE]
-            batch_num = i // PA11Y_BATCH_SIZE + 1
-            if log:
-                log.info(
-                    f"pa11y batch {batch_num}/{total_batches} ({len(batch)} URLs)",
-                    phase="pa11y", batch=batch_num, total_batches=total_batches,
-                )
+    """Run pa11y batches through a bounded Chromium worker pool."""
+    if not urls:
+        return []
+
+    batches = [urls[i : i + PA11Y_BATCH_SIZE] for i in range(0, len(urls), PA11Y_BATCH_SIZE)]
+    total_batches = len(batches)
+    all_results: list[dict] = []
+    with ThreadPoolExecutor(max_workers=min(PA11Y_WORKERS, total_batches)) as executor:
+        futures = [
+            (batch_num, batch, executor.submit(_run_pa11y_batch_with_logging, batch, batch_num, total_batches, log))
+            for batch_num, batch in enumerate(batches, start=1)
+        ]
+        for batch_num, batch, future in futures:
             try:
-                results = _run_pa11y_batch(batch)
-                all_results.extend(results)
-            except Exception as e:
+                all_results.extend(future.result())
+            except Exception as exc:
                 if log:
-                    log.error(f"pa11y batch {batch_num} falló: {e}", phase="pa11y")
-                for url in batch:
-                    all_results.append({"url": url, "status": "error", "error": str(e), "issues": []})
-        return all_results
+                    log.error(f"pa11y batch {batch_num} falló: {exc}", phase="pa11y")
+                all_results.extend(
+                    {"url": url, "status": "error", "error": str(exc), "issues": []}
+                    for url in batch
+                )
+    return all_results
+
+
+def _dom_error(exc: Exception) -> list[dict]:
+    return [{
+        "type": "notice",
+        "code": "dom-checker-error",
+        "message": f"Error al ejecutar checks DOM: {exc}",
+        "selector": "", "context": "", "runner": "dom-checker"
+    }]
 
 
 def run_dom_checks_for_urls(urls: list[str], analysis_id: int | None = None) -> dict[str, list[dict]]:
-    """Ejecuta los checks DOM con Playwright sync para cada URL. Devuelve {url: [issues]}."""
-    with BROWSER_WORKLOAD_LOCK:
-        return _run_dom_checks_for_urls_unlocked(urls, analysis_id)
+    """Ejecuta los checks DOM con un pool acotado de navegadores Playwright."""
+    if not urls:
+        return {}
+
+    workers = min(DOM_CHECKER_WORKERS, len(urls))
+    url_groups = [urls[index::workers] for index in range(workers)]
+    log = get_audit_logger(analysis_id) if analysis_id else get_audit_logger("global")
+    log.info("dom-checker iniciado", phase="dom-checker", total_urls=len(urls), workers=workers)
+    results: dict[str, list[dict]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_run_dom_checks_for_urls_unlocked, group, analysis_id) for group in url_groups]
+        for group, future in zip(url_groups, futures):
+            try:
+                results.update(future.result())
+            except Exception as exc:
+                log.error(f"dom-checker worker falló: {exc}", phase="dom-checker", exc=str(exc))
+                results.update({url: _dom_error(exc) for url in group})
+    log.info("dom-checker finalizado", phase="dom-checker", total_urls=len(urls), workers=workers)
+    return results
 
 
 def _run_dom_checks_for_urls_unlocked(urls: list[str], analysis_id: int | None = None) -> dict[str, list[dict]]:
     import time
     from playwright.sync_api import sync_playwright
+
     log = get_audit_logger(analysis_id) if analysis_id else get_audit_logger("global")
     results: dict[str, list[dict]] = {}
-    log.info("dom-checker iniciado", phase="dom-checker", total_urls=len(urls))
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        for url in urls:
-            issues: list[dict] = []
-            t0 = time.monotonic()
-            try:
-                page = browser.new_page()
-                log.info("navegando a página", phase="dom-checker", url=url)
-                page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                page.wait_for_timeout(500)
-                issues = run_dom_checks(page)
-                dur = int((time.monotonic() - t0) * 1000)
-                errors   = sum(1 for i in issues if i["type"] == "error")
-                warnings = sum(1 for i in issues if i["type"] == "warning")
-                notices  = sum(1 for i in issues if i["type"] == "notice")
-                log.info(
-                    "dom-checker completado",
-                    phase="dom-checker", url=url,
-                    duration_ms=dur, total_issues=len(issues),
-                    errors=errors, warnings=warnings, notices=notices,
-                )
-            except Exception as exc:
-                dur = int((time.monotonic() - t0) * 1000)
-                log.error(
-                    f"dom-checker falló: {exc}",
-                    phase="dom-checker", url=url, duration_ms=dur, exc=str(exc),
-                )
-                issues = [{
-                    "type": "notice",
-                    "code": "dom-checker-error",
-                    "message": f"Error al ejecutar checks DOM: {exc}",
-                    "selector": "", "context": "", "runner": "dom-checker"
-                }]
-            finally:
+    with BROWSER_WORKLOAD_SEMAPHORE:
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
                 try:
-                    page.close()
-                except Exception:
-                    pass
-            results[url] = issues
-        browser.close()
-    log.info("dom-checker finalizado", phase="dom-checker", total_urls=len(urls))
+                    for url in urls:
+                        page = None
+                        issues: list[dict] = []
+                        t0 = time.monotonic()
+                        try:
+                            if not browser.is_connected():
+                                browser.close()
+                                browser = p.chromium.launch(headless=True)
+                            page = browser.new_page()
+                            log.info("navegando a página", phase="dom-checker", url=url)
+                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                            page.wait_for_timeout(500)
+                            issues = run_dom_checks(page)
+                            dur = int((time.monotonic() - t0) * 1000)
+                            errors = sum(1 for issue in issues if issue["type"] == "error")
+                            warnings = sum(1 for issue in issues if issue["type"] == "warning")
+                            notices = sum(1 for issue in issues if issue["type"] == "notice")
+                            log.info(
+                                "dom-checker completado",
+                                phase="dom-checker", url=url,
+                                duration_ms=dur, total_issues=len(issues),
+                                errors=errors, warnings=warnings, notices=notices,
+                            )
+                        except Exception as exc:
+                            dur = int((time.monotonic() - t0) * 1000)
+                            log.error(
+                                f"dom-checker falló: {exc}",
+                                phase="dom-checker", url=url, duration_ms=dur, exc=str(exc),
+                            )
+                            issues = _dom_error(exc)
+                        finally:
+                            if page:
+                                try:
+                                    page.close()
+                                except Exception:
+                                    pass
+                        results[url] = issues
+                finally:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
+        except Exception as exc:
+            log.error(f"dom-checker worker falló: {exc}", phase="dom-checker", exc=str(exc))
+            for url in urls:
+                results.setdefault(url, _dom_error(exc))
     return results
 
 
