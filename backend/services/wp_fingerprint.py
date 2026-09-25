@@ -16,7 +16,7 @@ import requests
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 AccessibilityAuditor/1.0"
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
 VERSION_RE      = re.compile(r"[\?&]ver=([0-9][0-9a-zA-Z\.\-_]*)")

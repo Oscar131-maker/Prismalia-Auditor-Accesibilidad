@@ -52,67 +52,17 @@ async def login(data: dict):
     raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
 
-NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9"}
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; Pa11yAuditor/1.0)"}
+from backend.services.sitemap_crawler import fetch_sitemap_urls
 
-
-def _fetch_xml(url: str):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        return ET.fromstring(resp.read())
-
-
-def _is_sitemap_index(root) -> bool:
-    tag = root.tag.lower()
-    return "sitemapindex" in tag
-
-
-def _extract_page_urls(root) -> list[str]:
-    """Extract <loc> entries from a regular sitemap (not an index)."""
-    return [el.text.strip() for el in root.findall(".//sm:loc", NS) if el.text and el.text.strip()]
-
-
-def _extract_sub_sitemaps(root) -> list[str]:
-    """Extract child sitemap <loc> entries from a sitemapindex."""
-    return [el.text.strip() for el in root.findall(".//sm:sitemap/sm:loc", NS) if el.text and el.text.strip()]
-
-
-def fetch_sitemap_urls(base_url: str, limit: int) -> list[str]:
-    base = base_url.rstrip("/")
-    candidates = [
-        f"{base}/sitemap.xml",
-        f"{base}/sitemap_index.xml",
-        f"{base}/sitemap",
-    ]
-
-    for sitemap_url in candidates:
-        try:
-            root = _fetch_xml(sitemap_url)
-        except Exception:
-            continue
-
-        if _is_sitemap_index(root):
-            # It's an index: fetch every child sitemap and collect real page URLs
-            sub_sitemaps = _extract_sub_sitemaps(root)
-            page_urls: list[str] = []
-            for sub_url in sub_sitemaps:
-                try:
-                    sub_root = _fetch_xml(sub_url)
-                    page_urls.extend(_extract_page_urls(sub_root))
-                except Exception:
-                    continue
-                if len(page_urls) >= limit:
-                    break
-            if page_urls:
-                return page_urls[:limit]
-        else:
-            # It's a regular sitemap: URLs are directly inside
-            page_urls = _extract_page_urls(root)
-            if page_urls:
-                return page_urls[:limit]
-
-    # Fallback: audit just the root URL
-    return [base_url]
+# Configurar el ejecutable Chromium de Playwright para Puppeteer / Pa11y
+try:
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as _p:
+        _pw_exec = _p.chromium.executable_path
+        if _pw_exec and os.path.exists(_pw_exec):
+            os.environ["PUPPETEER_EXECUTABLE_PATH"] = _pw_exec
+except Exception:
+    pass
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -248,6 +198,15 @@ def _run_dom_checks_for_urls_unlocked(urls: list[str], analysis_id: int | None =
                             page = browser.new_page()
                             log.info("navegando a página", phase="dom-checker", url=url)
                             page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                            for _ in range(6):
+                                try:
+                                    title = page.title()
+                                    if "challenge" in title.lower() or "captcha" in page.url:
+                                        page.wait_for_timeout(1500)
+                                        continue
+                                    break
+                                except Exception:
+                                    page.wait_for_timeout(1000)
                             page.wait_for_timeout(500)
                             issues = run_dom_checks(page)
                             dur = int((time.monotonic() - t0) * 1000)
@@ -298,11 +257,12 @@ async def audit_task(analysis_id: int, url: str, limit: int):
         db.commit()
 
         # ── Fase: sitemap ──────────────────────────────────────────────────────
-        log.info("buscando URLs en sitemap", phase="sitemap", url=url)
+        log.info("buscando URLs en sitemap y crawler", phase="sitemap", url=url)
         t0 = time.monotonic()
-        urls = fetch_sitemap_urls(url, limit)
+        loop = asyncio.get_event_loop()
+        urls = await loop.run_in_executor(None, lambda: fetch_sitemap_urls(url, limit, log=log))
         log.info(
-            f"sitemap resuelto: {len(urls)} páginas encontradas",
+            f"sitemap/crawler resuelto: {len(urls)} páginas encontradas",
             phase="sitemap", url=url,
             duration_ms=int((time.monotonic() - t0) * 1000),
             pages=urls,
