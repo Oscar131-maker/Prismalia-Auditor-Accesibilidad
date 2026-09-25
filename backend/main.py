@@ -67,10 +67,10 @@ except Exception:
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
-PA11Y_BATCH_SIZE = max(1, int(os.environ.get("PA11Y_BATCH_SIZE", "3")))
-PA11Y_TIMEOUT_PER_URL = max(30, int(os.environ.get("PA11Y_TIMEOUT_PER_URL", "60")))
-PA11Y_PAGE_TIMEOUT_MS = max(1000, int(os.environ.get("PA11Y_PAGE_TIMEOUT_MS", "30000")))
-BROWSER_WORKERS = max(1, int(os.environ.get("BROWSER_WORKERS", "4")))
+PA11Y_BATCH_SIZE = max(1, int(os.environ.get("PA11Y_BATCH_SIZE", "4")))
+PA11Y_TIMEOUT_PER_URL = max(20, int(os.environ.get("PA11Y_TIMEOUT_PER_URL", "45")))
+PA11Y_PAGE_TIMEOUT_MS = max(1000, int(os.environ.get("PA11Y_PAGE_TIMEOUT_MS", "25000")))
+BROWSER_WORKERS = max(1, int(os.environ.get("BROWSER_WORKERS", "2")))
 PA11Y_WORKERS = min(BROWSER_WORKERS, max(1, int(os.environ.get("PA11Y_WORKERS", str(BROWSER_WORKERS)))))
 DOM_CHECKER_WORKERS = min(BROWSER_WORKERS, max(1, int(os.environ.get("DOM_CHECKER_WORKERS", str(BROWSER_WORKERS)))))
 BROWSER_WORKLOAD_SEMAPHORE = threading.BoundedSemaphore(BROWSER_WORKERS)
@@ -182,10 +182,17 @@ def _run_dom_checks_for_urls_unlocked(urls: list[str], analysis_id: int | None =
 
     log = get_audit_logger(analysis_id) if analysis_id else get_audit_logger("global")
     results: dict[str, list[dict]] = {}
+    playwright_launch_args = [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+    ]
     with BROWSER_WORKLOAD_SEMAPHORE:
         try:
             with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
+                browser = p.chromium.launch(headless=True, args=playwright_launch_args)
                 try:
                     for url in urls:
                         page = None
@@ -194,20 +201,20 @@ def _run_dom_checks_for_urls_unlocked(urls: list[str], analysis_id: int | None =
                         try:
                             if not browser.is_connected():
                                 browser.close()
-                                browser = p.chromium.launch(headless=True)
+                                browser = p.chromium.launch(headless=True, args=playwright_launch_args)
                             page = browser.new_page()
                             log.info("navegando a página", phase="dom-checker", url=url)
-                            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                            for _ in range(6):
+                            page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                            for _ in range(5):
                                 try:
-                                    title = page.title()
-                                    if "challenge" in title.lower() or "captcha" in page.url:
-                                        page.wait_for_timeout(1500)
+                                    cur_url = page.url or ""
+                                    title = page.title() or ""
+                                    if "challenge" in title.lower() or "captcha" in cur_url or "sgcaptcha" in cur_url:
+                                        page.wait_for_timeout(1000)
                                         continue
                                     break
                                 except Exception:
-                                    page.wait_for_timeout(1000)
-                            page.wait_for_timeout(500)
+                                    page.wait_for_timeout(600)
                             issues = run_dom_checks(page)
                             dur = int((time.monotonic() - t0) * 1000)
                             errors = sum(1 for issue in issues if issue["type"] == "error")
@@ -333,7 +340,13 @@ async def audit_task(analysis_id: int, url: str, limit: int):
                 if issue.get("type") == "error":
                     all_error_issues.append(issue)
 
-        # Deduplicate by code (keep first occurrence for each code)
+        # Deduplicate by code and prioritize by frequency
+        code_counts = {}
+        for issue in all_error_issues:
+            c = issue.get("code", "")
+            if c:
+                code_counts[c] = code_counts.get(c, 0) + 1
+
         seen_codes = set()
         unique_issues = []
         for issue in all_error_issues:
@@ -341,41 +354,46 @@ async def audit_task(analysis_id: int, url: str, limit: int):
             if code and code not in seen_codes:
                 seen_codes.add(code)
                 unique_issues.append(issue)
-            elif not code:
-                unique_issues.append(issue)
+
+        unique_issues.sort(key=lambda x: code_counts.get(x.get("code", ""), 0), reverse=True)
 
         log.info(
             f"fix-advice: {len(unique_issues)} issues únicos de {len(all_error_issues)} totales",
             phase="fix-advice-batch",
         )
 
-        # Generate advice for each unique issue (sync, one by one to avoid rate limits)
+        # Pre-generar consejo IA para los 5 errores más frecuentes (el resto se genera on-demand vía botón)
         from .services.fix_advisor import build_prompt, _run_gemini_sync
         advice_cache = {}  # code -> advice text
-        for idx, issue in enumerate(unique_issues[:30]):  # cap at 30 to avoid excessive API usage
-            code = issue.get("code", f"unknown-{idx}")
-            try:
-                prompt = build_prompt(
-                    issue_code=code,
-                    issue_message=issue.get("message", ""),
-                    issue_context=(issue.get("context", "") or "")[:2000],
-                    issue_selector=issue.get("selector", ""),
-                    theme_str=theme_str,
-                    plugins_str=plugins_str,
-                )
-                log.info(
-                    f"fix-advice [{idx+1}/{len(unique_issues[:30])}] consultando Gemini para {code[:60]}",
-                    phase="fix-advice-batch",
-                )
-                advice = _run_gemini_sync(prompt)
-                advice_cache[code] = advice
-                log.info(
-                    f"fix-advice [{idx+1}] recibido ({len(advice)} chars)",
-                    phase="fix-advice-batch",
-                )
-            except Exception as e:
-                log.error(f"fix-advice error para {code}: {e}", phase="fix-advice-batch")
-                advice_cache[code] = f"Error al consultar la IA: {e}"
+        top_issues = unique_issues[:5]
+        gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
+        if top_issues and gemini_api_key:
+            for idx, issue in enumerate(top_issues):
+                code = issue.get("code", f"unknown-{idx}")
+                try:
+                    prompt = build_prompt(
+                        issue_code=code,
+                        issue_message=issue.get("message", ""),
+                        issue_context=(issue.get("context", "") or "")[:2000],
+                        issue_selector=issue.get("selector", ""),
+                        theme_str=theme_str,
+                        plugins_str=plugins_str,
+                    )
+                    log.info(
+                        f"fix-advice [{idx+1}/{len(top_issues)}] consultando Gemini para {code[:60]}",
+                        phase="fix-advice-batch",
+                    )
+                    advice = await loop.run_in_executor(None, _run_gemini_sync, prompt)
+                    advice_cache[code] = advice
+                    log.info(
+                        f"fix-advice [{idx+1}] recibido ({len(advice)} chars)",
+                        phase="fix-advice-batch",
+                    )
+                except Exception as e:
+                    log.error(f"fix-advice error para {code}: {e}", phase="fix-advice-batch")
+                    advice_cache[code] = f"Error al consultar la IA: {e}"
+        elif not gemini_api_key:
+            log.info("GEMINI_API_KEY no configurada; omitiendo pre-generación", phase="fix-advice-batch")
 
         log.info(
             f"fix-advice batch completado: {len(advice_cache)} respuestas en "

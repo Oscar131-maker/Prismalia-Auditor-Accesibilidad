@@ -14,7 +14,7 @@ from google import genai
 from google.genai import types
 
 PROMPT_TEMPLATE = Path(__file__).parent.parent / "prompts" / "como_solucionar.txt"
-MODEL = "gemini-3.1-flash-lite"
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 _client: genai.Client | None = None
 

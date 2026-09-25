@@ -159,7 +159,7 @@ def fetch_sitemap_urls(base_url: str, limit: int = 10, log=None) -> list[str]:
                         break
                     try:
                         page.goto(sm_url, wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(1500)
+                        page.wait_for_timeout(1000)
                         if "challenge" in page.title().lower() or "captcha" in page.url:
                             continue
                         content = page.content()
@@ -167,12 +167,34 @@ def fetch_sitemap_urls(base_url: str, limit: int = 10, log=None) -> list[str]:
                         dom = page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
                         entries = list(dict.fromkeys(locs + dom))
 
+                        child_sitemaps = []
                         for l in entries:
                             p_l = urlparse(l)
-                            if not p_l.path.lower().endswith(".xml") and "sitemap" not in p_l.path.lower():
+                            if p_l.path.lower().endswith(".xml") or "sitemap" in p_l.path.lower():
+                                if l not in sitemap_candidates and l not in child_sitemaps:
+                                    child_sitemaps.append(l)
+                            else:
                                 add_candidate(l)
                                 if len(collected) >= limit:
                                     break
+
+                        # Si el sitemap era un índice (como sitemap_index.xml o wp-sitemap.xml), explorar sitemaps hijos
+                        for child_sm in child_sitemaps[:6]:
+                            if len(collected) >= limit:
+                                break
+                            try:
+                                page.goto(child_sm, wait_until="domcontentloaded", timeout=12000)
+                                page.wait_for_timeout(800)
+                                child_content = page.content()
+                                child_locs = re.findall(r"<loc>\s*(https?://[^\s<]+)\s*</loc>", child_content, re.IGNORECASE)
+                                child_dom = page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
+                                for cl in list(dict.fromkeys(child_locs + child_dom)):
+                                    if not urlparse(cl).path.lower().endswith(".xml"):
+                                        add_candidate(cl)
+                                        if len(collected) >= limit:
+                                            break
+                            except Exception:
+                                continue
                     except Exception:
                         continue
 

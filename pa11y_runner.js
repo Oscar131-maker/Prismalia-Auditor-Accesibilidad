@@ -107,6 +107,9 @@ const browserArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--no-first-run',
+    '--disable-extensions',
     '--disable-blink-features=AutomationControlled'
 ];
 
@@ -145,22 +148,25 @@ async function navigateAndBypassChallenge(page, url, timeout = 30000) {
         // Redirections might interrupt initial navigation, handled below
     }
 
-    // Wait for SiteGround Robot Challenge Screen (PoW captcha) to finish and redirect to real page
+    // Wait for SiteGround Robot Challenge Screen (PoW captcha) only if currently on challenge
     const start = Date.now();
-    while (Date.now() - start < 15000) {
-        await new Promise(r => setTimeout(r, 800));
+    while (Date.now() - start < 8000) {
         try {
-            const title = (await page.title()) || '';
             const curUrl = page.url() || '';
-            const isChallengeScreen = title.includes('Challenge') || curUrl.includes('sgcaptcha') || curUrl.includes('captcha') || title.toLowerCase().includes('robot') || title === '';
+            const title = (await page.title()) || '';
+            const isChallengeScreen = curUrl.includes('sgcaptcha') ||
+                                      curUrl.includes('challenge') ||
+                                      title.toLowerCase().includes('challenge') ||
+                                      title.toLowerCase().includes('robot');
             if (!isChallengeScreen) {
                 break;
             }
+            await new Promise(r => setTimeout(r, 600));
         } catch(e) {
             // Execution context destroyed during redirect
+            await new Promise(r => setTimeout(r, 600));
         }
     }
-    await new Promise(r => setTimeout(r, 500));
 }
 
 async function run() {
